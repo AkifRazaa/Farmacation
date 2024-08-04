@@ -1,0 +1,419 @@
+add input validations.
+
+fix the loader for create post. When loader comes the backgriund turn white. It should be the create-post screen
+
+solve the viewproptype error in community page. The error is only showing in the console.
+
+
+
+--
+
+buyer can also request for inspection
+
+inspetor should be able to upload detail of the inspection, algong with everything to be shown on the dashboard
+
+inpection information should also be displayed to the admin
+
+
+----
+
+Show all inspector, edit or delete in admin panel.
+Buyer an also request for inspection - jazzcash/easypaise, status, 
+
+
+-----
+
+----
+
+
+
+using System;
+using System.Collections.Generic;
+using System.Text;
+using System.Text.RegularExpressions;
+
+public enum TokenType
+{
+    Number,
+    Identifier,
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Assign,
+    Semicolon,
+    LeftParen,
+    RightParen,
+    EOF,
+    Unknown
+}
+
+public class Token
+{
+    public TokenType Type { get; }
+    public string Value { get; }
+
+    public Token(TokenType type, string value)
+    {
+        Type = type;
+        Value = value;
+    }
+
+    public override string ToString() => $"{Type}: {Value}";
+}
+
+public class Lexer
+{
+    private readonly string _input;
+    private int _position;
+
+    public Lexer(string input)
+    {
+        _input = input;
+        _position = 0;
+    }
+
+    private char CurrentChar => _position < _input.Length ? _input[_position] : '\0';
+
+    private void Advance() => _position++;
+
+    public Token GetNextToken()
+    {
+        while (CurrentChar != '\0')
+        {
+            if (char.IsWhiteSpace(CurrentChar))
+            {
+                Advance();
+                continue;
+            }
+
+            if (char.IsDigit(CurrentChar))
+                return Number();
+
+            if (char.IsLetter(CurrentChar))
+                return Identifier();
+
+            switch (CurrentChar)
+            {
+                case '+': Advance(); return new Token(TokenType.Plus, "+");
+                case '-': Advance(); return new Token(TokenType.Minus, "-");
+                case '*': Advance(); return new Token(TokenType.Multiply, "*");
+                case '/': Advance(); return new Token(TokenType.Divide, "/");
+                case '=': Advance(); return new Token(TokenType.Assign, "=");
+                case ';': Advance(); return new Token(TokenType.Semicolon, ";");
+                case '(': Advance(); return new Token(TokenType.LeftParen, "(");
+                case ')': Advance(); return new Token(TokenType.RightParen, ")");
+                default: Advance(); return new Token(TokenType.Unknown, CurrentChar.ToString());
+            }
+        }
+
+        return new Token(TokenType.EOF, string.Empty);
+    }
+
+    private Token Number()
+    {
+        var result = "";
+        while (char.IsDigit(CurrentChar))
+        {
+            result += CurrentChar;
+            Advance();
+        }
+        return new Token(TokenType.Number, result);
+    }
+
+    private Token Identifier()
+    {
+        var result = "";
+        while (char.IsLetterOrDigit(CurrentChar))
+        {
+            result += CurrentChar;
+            Advance();
+        }
+        return new Token(TokenType.Identifier, result);
+    }
+}
+
+public abstract class AstNode { }
+
+public class BinaryOpNode : AstNode
+{
+    public AstNode Left { get; }
+    public string Op { get; }
+    public AstNode Right { get; }
+
+    public BinaryOpNode(AstNode left, string op, AstNode right)
+    {
+        Left = left;
+        Op = op;
+        Right = right;
+    }
+}
+
+public class NumberNode : AstNode
+{
+    public string Value { get; }
+
+    public NumberNode(string value)
+    {
+        Value = value;
+    }
+}
+
+public class IdentifierNode : AstNode
+{
+    public string Name { get; }
+
+    public IdentifierNode(string name)
+    {
+        Name = name;
+    }
+}
+
+public class AssignNode : AstNode
+{
+    public string Variable { get; }
+    public AstNode Expression { get; }
+
+    public AssignNode(string variable, AstNode expression)
+    {
+        Variable = variable;
+        Expression = expression;
+    }
+}
+
+public class BlockNode : AstNode
+{
+    public List<AstNode> Statements { get; }
+
+    public BlockNode(List<AstNode> statements)
+    {
+        Statements = statements;
+    }
+}
+
+public class Parser
+{
+    private readonly List<Token> _tokens;
+    private int _position;
+
+    public Parser(List<Token> tokens)
+    {
+        _tokens = tokens;
+        _position = 0;
+    }
+
+    private Token CurrentToken => _position < _tokens.Count ? _tokens[_position] : new Token(TokenType.EOF, string.Empty);
+
+    private void Eat(TokenType type)
+    {
+        if (CurrentToken.Type == type)
+            _position++;
+        else
+            throw new Exception($"Unexpected token: {CurrentToken.Type}, expected: {type}");
+    }
+
+    public AstNode Parse()
+    {
+        var nodes = new List<AstNode>();
+        while (CurrentToken.Type != TokenType.EOF)
+        {
+            nodes.Add(Statement());
+        }
+        return nodes.Count == 1 ? nodes[0] : new BlockNode(nodes);
+    }
+
+    private AstNode Statement()
+    {
+        if (CurrentToken.Type == TokenType.Identifier && PeekNextToken().Type == TokenType.Assign)
+        {
+            return AssignStatement();
+        }
+        return Expression();
+    }
+
+    private AstNode AssignStatement()
+    {
+        var variable = CurrentToken.Value;
+        Eat(TokenType.Identifier);
+        Eat(TokenType.Assign);
+        var expression = Expression();
+        Eat(TokenType.Semicolon);
+        return new AssignNode(variable, expression);
+    }
+
+    private AstNode Expression()
+    {
+        var node = Term();
+        while (CurrentToken.Type == TokenType.Plus || CurrentToken.Type == TokenType.Minus)
+        {
+            var token = CurrentToken;
+            Eat(token.Type);
+            node = new BinaryOpNode(node, token.Value, Term());
+        }
+        return node;
+    }
+
+    private AstNode Term()
+    {
+        var node = Factor();
+        while (CurrentToken.Type == TokenType.Multiply || CurrentToken.Type == TokenType.Divide)
+        {
+            var token = CurrentToken;
+            Eat(token.Type);
+            node = new BinaryOpNode(node, token.Value, Factor());
+        }
+        return node;
+    }
+
+    private AstNode Factor()
+    {
+        var token = CurrentToken;
+        if (token.Type == TokenType.Number)
+        {
+            Eat(TokenType.Number);
+            return new NumberNode(token.Value);
+        }
+        if (token.Type == TokenType.Identifier)
+        {
+            Eat(TokenType.Identifier);
+            return new IdentifierNode(token.Value);
+        }
+        if (token.Type == TokenType.LeftParen)
+        {
+            Eat(TokenType.LeftParen);
+            var node = Expression();
+            Eat(TokenType.RightParen);
+            return node;
+        }
+        throw new Exception($"Unexpected token: {token.Type}");
+    }
+
+    private Token PeekNextToken()
+    {
+        return _position + 1 < _tokens.Count ? _tokens[_position + 1] : new Token(TokenType.EOF, string.Empty);
+    }
+}
+
+public class SemanticAnalyzer
+{
+    private readonly Dictionary<string, string> _symbolTable = new Dictionary<string, string>();
+
+    public void Analyze(AstNode node)
+    {
+        switch (node)
+        {
+            case AssignNode assignNode:
+                Analyze(assignNode.Expression);
+                _symbolTable[assignNode.Variable] = "int"; // Assuming all variables are integers for simplicity
+                break;
+            case BinaryOpNode binaryOpNode:
+                Analyze(binaryOpNode.Left);
+                Analyze(binaryOpNode.Right);
+                break;
+            case IdentifierNode identifierNode:
+                if (!_symbolTable.ContainsKey(identifierNode.Name))
+                {
+                    throw new Exception($"Undeclared variable: {identifierNode.Name}");
+                }
+                break;
+            case NumberNode _:
+                // Numbers are always valid
+                break;
+            case BlockNode blockNode:
+                foreach (var statement in blockNode.Statements)
+                {
+                    Analyze(statement);
+                }
+                break;
+        }
+    }
+}
+
+public class CodeGenerator
+{
+    public string GenerateCode(AstNode node)
+    {
+        var sb = new StringBuilder();
+        GenerateCode(node, sb);
+        return sb.ToString();
+    }
+
+    private void GenerateCode(AstNode node, StringBuilder sb)
+    {
+        switch (node)
+        {
+            case AssignNode assignNode:
+                GenerateCode(assignNode.Expression, sb);
+                sb.AppendLine($"STORE {assignNode.Variable}");
+                break;
+            case BinaryOpNode binaryOpNode:
+                GenerateCode(binaryOpNode.Left, sb);
+                GenerateCode(binaryOpNode.Right, sb);
+                sb.AppendLine(binaryOpNode.Op.ToUpper());
+                break;
+            case NumberNode numberNode:
+                sb.AppendLine($"PUSH {numberNode.Value}");
+                break;
+            case IdentifierNode identifierNode:
+                sb.AppendLine($"PUSH {identifierNode.Name}");
+                break;
+            case BlockNode blockNode:
+                foreach (var statement in blockNode.Statements)
+                {
+                    GenerateCode(statement, sb);
+                }
+                break;
+        }
+    }
+}
+
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        string input = "x = 3 + 4 * (2 - 1);";
+
+        // Lexical Analysis
+        var lexer = new Lexer(input);
+        var tokens = new List<Token>();
+        Token token;
+        while ((token = lexer.GetNextToken()).Type != TokenType.EOF)
+        {
+            tokens.Add(token);
+        }
+
+        // Syntax Analysis
+        var parser = new Parser(tokens);
+        var ast = parser.Parse();
+
+        // Semantic Analysis
+        var semanticAnalyzer = new SemanticAnalyzer();
+        semanticAnalyzer.Analyze(ast);
+
+        // Code Generation
+        var codeGenerator = new CodeGenerator();
+        string code = codeGenerator.GenerateCode(ast);
+
+        Console.WriteLine("Generated Code:");
+        Console.WriteLine(code);
+    }
+}
+
+
+
+
+
+
+3 E's of Road saftey
+1. Engineering
+2. Education
+3. Enforcement
+
+----
+warning signs in triangle form
+mandatory sign in circle form
+Information sign in rectangle form e.g age school he, multan he etc.
+----
+
+
+
